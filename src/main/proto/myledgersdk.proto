@@ -1,0 +1,440 @@
+syntax = "proto3";
+
+package ledgerdb;
+
+option java_multiple_files = true;
+option java_package = "com.antfin.ledgerdb.sdk.proto";
+option java_outer_classname = "LedgerDBSdkProtocol";
+option java_generic_services = true;
+option objc_class_prefix = "LEDGERDBSDK";
+
+import "google/protobuf/any.proto";
+
+service LedgerDBService {
+  rpc ExecuteTx(ExecuteTxRequest) returns(ExecuteTxResponse) {}
+}
+
+message Digest {
+  enum HashType {
+    UNKNOWN = 0;
+    SHA256 = 1;
+    // SM3 = 2;
+  }
+
+  HashType hash_type = 1;
+  bytes hash = 2;
+}
+
+message Signature {
+  enum SignatureType {
+    UNKNOWN = 0;
+    SECP256K1 = 1;
+    SECP256R1 = 2;
+    // SM2 = 3;
+  }
+
+  SignatureType sign_type = 1;
+  bytes sign              = 2;
+}
+
+message RequestAuth {
+  Digest digest            = 1;
+  repeated Signature signs = 2;
+}
+
+message ResponseAuth {
+  repeated Signature signs = 1;
+}
+
+message ApiStatus {
+  // These values must match error codes defined in google/rpc/code.proto.
+  enum Code {
+    OK                  = 0;
+    CANCELLED           = 1;
+    UNKNOWN             = 2;
+    INVALID_ARGUMENT    = 3;
+    DEADLINE_EXCEEDED   = 4;
+    NOT_FOUND           = 5;
+    ALREADY_EXISTS      = 6;
+    PERMISSION_DENIED   = 7;
+    RESOURCE_EXHAUSTED  = 8;
+    FAILED_PRECONDITION = 9;
+    ABORTED             = 10;
+    OUT_OF_RANGE        = 11;
+    UNIMPLEMENTED       = 12;
+    INTERNAL            = 13;
+    UNAVAILABLE         = 14;
+    DATA_LOSS           = 15;
+    UNAUTHENTICATED     = 16;
+  }
+
+  // The status code, which should be an enum value of Code.
+  Code code = 1;
+
+  // A developer-facing error message, which should be in English.
+  string message = 2;
+
+  // A list of messages that carry the error details.  There is a common set of
+  // message types for APIs to use.
+  repeated google.protobuf.Any details = 3;
+}
+
+message ExecuteTxRequest {
+  string uri               = 1;
+  bytes request_message    = 2;
+  RequestAuth request_auth = 3;
+}
+
+message ExecuteTxResponse {
+  ApiStatus status           = 1;
+  bytes response_message     = 2;
+  ResponseAuth response_auth = 3;
+}
+
+enum ApiVersion {
+  API_VERSION_INVALID = 0;
+  API_VERSION_1       = 1;
+}
+
+message Sender {
+  string member_id      = 1;
+  bytes  public_key     = 2;
+  enum SenderType {
+    REGULAR = 0;
+    TRUSTEE = 1;
+    LEDGERC = 2;
+  }
+  SenderType sender_type = 3;
+}
+
+// message Proposer {
+// }
+
+// message Trustee {
+// }
+
+// message Policy {
+// }
+
+message TxRequest {
+  ApiVersion api_version  = 1;
+  string ledger_id        = 2;
+  string client_token     = 3;
+  uint64 client_sequence  = 4;
+  uint64 timestamp_millis = 5;
+  uint64 nonce            = 6;
+  repeated string clues   = 7;
+  repeated Sender senders  = 8;
+
+  oneof payload {
+    bytes                      custom_payload        = 100;
+
+    CreateLedgerRequestPayload create_ledger_payload = 101;
+    DeleteLedgerRequestPayload delete_ledger_payload = 102;
+    UpdateLedgerRequestPayload update_ledger_payload = 103;
+    StatLedgerRequestPayload   stat_ledger_payload   = 104;
+    RecoverLedgerRequestPayload recover_ledger_payload = 105;
+
+    CreateMemberRequestPayload create_member_payload = 110;
+    DeleteMemberRequestPayload delete_member_payload = 111;
+    UpdateMemberRequestPayload update_member_payload = 112;
+    EnableMemberRequestPayload enable_member_payload = 113;
+    DisableMemberRequestPayload disable_member_payload = 114;
+    GetMemberRequestPayload    get_member_payload    = 115;
+    ListMembersRequestPayload  list_members_payload  = 116;
+
+    SetTrustPointRequestPayload set_trustpoint_payload = 120;
+    GetTrustPointRequestPayload get_trustpoint_payload = 121;
+    GrantTimeRequestPayload     grant_time_payload     = 122;
+    GetLastGrantTimeRequestPayload get_lastgranttime_payload = 123;
+    ListGrantTimeTxsRequestPayload list_grant_time_txs_payload = 124;
+
+    GetTxRequestPayload        get_tx_payload        = 150;
+    ExistTxRequestPayload      exist_tx_payload      = 151;
+    ListTxsRequestPayload      list_txs_payload      = 152;
+    GetBlockInfoRequestPayload get_blockinfo_payload = 153;
+  }
+}
+
+message TxResponse {
+  ApiVersion api_version = 1;
+  Digest request_digest  = 2;
+  ApiStatus op_status    = 3;
+  uint64 op_time_nanos   = 4;
+  bytes tx_hash          = 5;
+  uint64 total_sequence  = 6;
+  bytes  state_root_hash = 7;
+  uint64 block_sequence  = 8;
+  bytes block_hash       = 9;
+
+  oneof payload {
+    bytes                       custom_payload        = 100;
+
+    CreateLedgerResponsePayload create_ledger_payload = 101;
+    DeleteLedgerResponsePayload delete_ledger_payload = 102;
+    UpdateLedgerResponsePayload update_ledger_payload = 103;
+    StatLedgerResponsePayload   stat_ledger_payload   = 104;
+    RecoverLedgerResponsePayload recover_ledger_payload = 105;
+
+    CreateMemberResponsePayload create_member_payload = 110;
+    DeleteMemberResponsePayload delete_member_payload = 111;
+    UpdateMemberResponsePayload update_member_payload = 112;
+    EnableMemberResponsePayload enable_member_payload = 113;
+    DisableMemberResponsePayload disable_member_payload = 114;
+    GetMemberResponsePayload    get_member_payload    = 115;
+    ListMembersResponsePayload  list_members_payload  = 116;
+
+    SetTrustPointResponsePayload set_trustpoint_payload = 120;
+    GetTrustPointResponsePayload get_trustpoint_payload = 121;
+    GrantTimeResponsePayload     grant_time_payload     = 122;
+    GetLastGrantTimeResponsePayload get_lastgranttime_payload = 123;
+    ListGrantTimeTxsResponsePayload list_grant_time_txs_payload = 124;
+
+    GetTxResponsePayload        get_tx_payload        = 150;
+    ExistTxResponsePayload      exist_tx_payload      = 151;
+    ListTxsResponsePayload      list_txs_payload      = 152;
+    GetBlockInfoResponsePayload get_blockinfo_payload = 153;
+  }
+}
+
+message TxExecuteInfo {
+  RequestAuth request_auth = 1;
+  ApiStatus op_status      = 2;
+  uint64 op_time_nanos     = 3;
+  uint64 sequence          = 4;
+  bytes state_root_hash    = 5;
+}
+
+message Tx {
+  TxRequest request     = 1;
+  TxExecuteInfo tx_info = 2;
+  bytes tx_hash         = 3;  // hash for tx_info
+}
+
+message BlockInfo {
+  uint64 block_sequence     = 1;
+  bytes parent_block_hash   = 2;
+  uint64 first_tx_sequence  = 3;
+  uint64 last_tx_sequence   = 4;
+  bytes tx_root_hash        = 5;
+  uint64 timestamp          = 6;
+}
+
+enum LedgerPermission {
+  PEM_UNKNOWN           = 0;
+  PEM_UPDATE_LEDGER     = 1; // create/delete/update/recover ledger
+  PEM_VIEW_LEDGER       = 2; // stat ledger
+  PEM_UPDATE_MEMBER     = 3; // create/delete/update members
+  PEM_VIEW_MEMBER       = 4; // get/list
+  PEM_UPDATE_TRUSTPOINT = 5; // set trust point
+  PEM_VIEW_TRUSTPOINT   = 6; // get trust point
+  PEM_CUSTOM_TX         = 7; // append tx
+  PEM_VIEW_TX           = 8; // get/exist/list txs
+  PEM_GRANT_TIME        = 9; // grant time
+  PEM_VIEW_GRANT_TIME   = 10;// get last grant time
+}
+
+message PermissionItem {
+  LedgerPermission permission = 1;
+  uint32 weight = 2;
+}
+
+message MemberInfo {
+  string member_id                    = 1;
+  bytes public_key                    = 2;
+  repeated PermissionItem permissions = 3;
+  bool disabled                       = 4;
+}
+
+message LedgerMeta {
+}
+
+message LedgerInfo {
+  message Client {
+    string client_token        = 1;
+    uint64 max_client_sequence = 2;
+  }
+
+  enum State {
+    INVALID  = 0;
+    NORMAL   = 1;
+    DELETING = 2;
+    DELETED  = 3;
+  }
+
+  uint64 member_count             = 1;
+  uint64 create_time_nanos        = 2;
+  uint64 update_time_nanos        = 3;
+  string ledger_token             = 4; // Not use
+  repeated Client clients         = 5;
+  uint64 tx_num                   = 6;
+  uint64 trust_point              = 7;
+  uint64 block_num                = 8; // Not use
+  uint64 grant_time_seconds       = 9;
+  State  state                    = 10;
+}
+
+message CreateLedgerRequestPayload {
+  LedgerMeta ledger_meta = 1;
+}
+
+message CreateLedgerResponsePayload {
+  LedgerInfo ledger_info = 1;
+}
+
+message DeleteLedgerRequestPayload {
+}
+
+message DeleteLedgerResponsePayload {
+  LedgerInfo ledger_info = 1;
+}
+
+message StatLedgerRequestPayload {
+}
+
+message StatLedgerResponsePayload {
+  LedgerInfo ledger_info = 1;
+}
+
+message RecoverLedgerRequestPayload {
+}
+
+message RecoverLedgerResponsePayload {
+  LedgerInfo ledger_info = 1;
+}
+
+message UpdateLedgerRequestPayload {
+  LedgerMeta ledger_meta = 1;
+}
+
+message UpdateLedgerResponsePayload {
+  LedgerInfo ledger_info = 1;
+}
+
+message CreateMemberRequestPayload {
+  MemberInfo member_info = 1;
+}
+
+message CreateMemberResponsePayload {
+  MemberInfo member_info = 1;
+}
+
+message DeleteMemberRequestPayload {
+  string member_id = 1;
+}
+
+message DeleteMemberResponsePayload {
+}
+
+message UpdateMemberRequestPayload {
+  MemberInfo member_info = 1;
+}
+
+message UpdateMemberResponsePayload {
+}
+
+message EnableMemberRequestPayload {
+  string member_id = 1;
+}
+
+message EnableMemberResponsePayload {
+}
+
+message DisableMemberRequestPayload {
+  string member_id = 1;
+}
+
+message DisableMemberResponsePayload {
+}
+
+message GetMemberRequestPayload {
+  string member_id = 1;
+}
+
+message GetMemberResponsePayload {
+  MemberInfo member_info = 1;
+}
+
+message ListMembersRequestPayload {
+  string last_member_id = 1;
+  uint32 limit = 2;
+}
+
+message ListMembersResponsePayload {
+  repeated MemberInfo members = 1;
+}
+
+message SetTrustPointRequestPayload {
+  uint64 trust_sequence = 1;
+}
+
+message SetTrustPointResponsePayload {
+}
+
+message GetTrustPointRequestPayload {
+}
+
+message GetTrustPointResponsePayload {
+  uint64 trust_sequence = 1;
+  Tx tx                 = 2;
+}
+
+message GrantTimeRequestPayload {
+  uint64 timestamp_seconds = 1;
+  bytes  proof             = 2;
+}
+
+message GrantTimeResponsePayload {
+}
+
+message GetLastGrantTimeRequestPayload {
+}
+
+message GetLastGrantTimeResponsePayload {
+  uint64 timestamp_seconds = 1;
+  bytes proof              = 2;
+  Tx tx                    = 3;
+}
+
+message ListGrantTimeTxsRequestPayload {
+  uint64 start_seq = 1;
+  uint32 limit = 2;
+}
+
+message ListGrantTimeTxsResponsePayload {
+  repeated Tx tx = 1;
+}
+
+message GetBlockInfoRequestPayload {
+  uint64 block_sequence = 1;
+}
+
+message GetBlockInfoResponsePayload {
+  BlockInfo block_info = 1;
+}
+
+message GetTxRequestPayload {
+  uint64 sequence = 1;
+}
+
+message GetTxResponsePayload {
+  Tx tx = 1;
+}
+
+message ExistTxRequestPayload {
+  uint64 sequence = 1;
+  bytes tx_hash   = 2;
+}
+
+message ExistTxResponsePayload {
+}
+
+message ListTxsRequestPayload {
+  uint64 start_seq    = 1;
+  uint32 limit        = 2;
+  string clue         = 3; // filter by clue
+}
+
+message ListTxsResponsePayload {
+  repeated Tx tx = 1;
+}
