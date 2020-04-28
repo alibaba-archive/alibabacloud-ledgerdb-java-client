@@ -2,7 +2,18 @@ package com.antfin.ledgerdb.sdk.util;
 
 import java.math.BigInteger;
 
+/**
+ * Message codec functions.
+ *
+ * <p> Adapted from <a
+ * href="https://github.com/web3j/web3j/blob/master/utils/src/main/java/org/web3j/utils/Numeric.java">
+ * NumericUtils</a> implementation
+ *
+ */
 public class NumericUtils {
+
+  private static final String HEX_PREFIX = "0x";
+
   private NumericUtils() {
   }
 
@@ -35,7 +46,7 @@ public class NumericUtils {
   public static String toHexString(byte[] input, int offset, int length, boolean withPrefix) {
     StringBuilder stringBuilder = new StringBuilder();
     if (withPrefix) {
-      stringBuilder.append("0x");
+      stringBuilder.append(HEX_PREFIX);
     }
 
     for(int i = offset; i < offset + length; ++i) {

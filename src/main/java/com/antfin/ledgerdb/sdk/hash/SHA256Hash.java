@@ -1,13 +1,14 @@
 package com.antfin.ledgerdb.sdk.hash;
 
+import com.antfin.ledgerdb.sdk.proto.Digest;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 public class SHA256Hash implements IHash {
   @Override
-  public HashTypeEnum getHashType() {
-    return HashTypeEnum.SHA256;
+  public Digest.HashType getHashType() {
+    return Digest.HashType.SHA256;
   }
 
   @Override

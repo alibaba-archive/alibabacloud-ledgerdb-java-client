@@ -1,11 +1,11 @@
 package com.antfin.ledgerdb.sdk;
 
 import com.antfin.ledgerdb.sdk.common.*;
+import com.antfin.ledgerdb.sdk.exception.LedgerRequestException;
 import com.antfin.ledgerdb.sdk.proto.*;
-import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.protobuf.ByteString;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
-import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.NettyChannelBuilder;
@@ -16,20 +16,19 @@ import java.io.File;
 import javax.net.ssl.SSLException;
 import java.io.InputStream;
 import java.net.Inet4Address;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.antfin.ledgerdb.sdk.ClientHelper.*;
-
-public class MyLedgerLightClient {
+public class LedgerDBLightClient {
 
   private static final int ESTIMATE_CLIENT_ID_LENGTH = 50;
 
   private final ManagedChannel channel;
   private final String clientId;
-  private final  AtomicInteger clientSequenceCounter = new AtomicInteger(0);
+  private final String ledgerUriPrefix;
 
-  public MyLedgerLightClient(String proxyHost, int port) {
+  public LedgerDBLightClient(String proxyHost, int port) {
+    this.ledgerUriPrefix = "ledger://" + proxyHost + ":" + port + "/";
     this.channel =
         ManagedChannelBuilder.forAddress(proxyHost, port)
                              .usePlaintext()
@@ -37,19 +36,24 @@ public class MyLedgerLightClient {
     this.clientId = generateClientId();
   }
 
-  public MyLedgerLightClient(
+  public LedgerDBLightClient(
       String proxyHost,
       int port,
       SslContext sslContext){
+    this.ledgerUriPrefix = "ledger://" + proxyHost + ":" + port + "/";
     this.channel =
         NettyChannelBuilder.forAddress(proxyHost, port)
             .sslContext(sslContext).build();
     this.clientId = generateClientId();
   }
 
+  public String getLedgerUriPrefix() {
+    return ledgerUriPrefix;
+  }
+
   private static String generateClientId() {
     StringBuilder clientIdBuilder = new StringBuilder(ESTIMATE_CLIENT_ID_LENGTH);
-    clientIdBuilder.append("MyLedger-Client4j-");
+    clientIdBuilder.append("LedgerDB-Client4j-");
     try {
       String ip = Inet4Address.getLocalHost().getHostAddress();
       clientIdBuilder.append(ip);
@@ -81,26 +85,28 @@ public class MyLedgerLightClient {
   }
 
   /**
-   * @param ledgerUri 待创建的ledger的URI标识
-   * @param ledgerMeta ledger元信息
-   * @param opControl 请求控制项
+   * 创建账本
+   * @param ledgerUri     待创建的ledger的URI标识
+   * @param ledgerMeta    ledger元信息
+   * @param memberInfos   账本成员列表
+   * @param opControl     请求控制项
    * @return
    */
   public CreateLedgerResponse createLedger(
       String ledgerUri,
       LedgerMeta ledgerMeta,
+      List<MemberInfo> memberInfos,
       OperationControl opControl) {
     ExecuteTxRequest request =
-        ClientHelper.buildCreateLedgerRequest(ledgerUri, ledgerMeta, opControl, this);
-    System.out.println(request);
+        ClientHelper.buildCreateLedgerRequest(ledgerUri, ledgerMeta, memberInfos ,opControl, this);
     ExecuteTxResponse response = callTxResponse(request, opControl);
     return ClientHelper.buildCreateLedgerResponse(response);
   }
 
   /**
-   *
-   * @param ledgerUri 待删除的ledger的URI标识
-   * @param opControl 请求控制项
+   * 删除账本
+   * @param ledgerUri   待删除的ledger的URI标识
+   * @param opControl   请求控制项
    * @return
    */
   public DeleteLedgerResponse deleteLedger(
@@ -113,10 +119,10 @@ public class MyLedgerLightClient {
   }
 
   /**
-   *
-   * @param ledgerUri 待更新的ledger的URI
-   * @param ledgerMeta ledger元信息
-   * @param opControl 请求控制项
+   * 更新账本元信息
+   * @param ledgerUri       待更新的ledger的URI
+   * @param ledgerMeta      ledger元信息
+   * @param opControl       请求控制项
    * @return
    */
   public UpdateLedgerResponse updateLedger(
@@ -130,9 +136,9 @@ public class MyLedgerLightClient {
   }
 
   /**
-   *
-   * @param ledgerUri 待更新的ledger的URI
-   * @param opControl 请求控制项
+   * 查询账本信息
+   * @param ledgerUri       待更新的ledger的URI
+   * @param opControl       请求控制项
    * @return
    */
   public StatLedgerResponse statLedger(
@@ -145,10 +151,10 @@ public class MyLedgerLightClient {
   }
 
   /**
-   *
-   * @param ledgerUri 目标ledger的URI标识
-   * @param data 交易内容
-   * @param opControl 请求控制项
+   * 新增记录
+   * @param ledgerUri       目标ledger的URI标识
+   * @param data            记录内容
+   * @param opControl       请求控制项
    * @return
    */
   public AppendTransactionResponse appendTransaction(
@@ -162,10 +168,10 @@ public class MyLedgerLightClient {
   }
 
   /**
-   *
-   * @param ledgerUri 目标ledger的URI标识
-   * @param txSequence 交易序号
-   * @param opControl 请求控制项
+   * 读取记录
+   * @param ledgerUri     目标ledger的URI标识
+   * @param txSequence    交易序号
+   * @param opControl     请求控制项
    * @return
    */
   public GetTransactionResponse getTransaction(
@@ -179,29 +185,29 @@ public class MyLedgerLightClient {
   }
 
   /**
-   *
-   * @param ledgerUri 目标ledger的URI标识
-   * @param txSequence 交易序号
-   * @param opControl 请求控制项
+   * 查询记录是否存在
+   * @param ledgerUri     目标ledger的URI标识
+   * @param txSequence    交易序号
+   * @param opControl     请求控制项
    * @return
    */
-  public VerifyTransactionResponse verifyTransaction(
+  public ExistTransactionResponse existTransaction(
       String ledgerUri,
       long txSequence,
       OperationControl opControl) {
     ExecuteTxRequest request =
         ClientHelper.buildVerifyTransactionRequest(ledgerUri, txSequence, opControl, this);
     ExecuteTxResponse response = callTxResponse(request, opControl);
-    return ClientHelper.buildVerifyTransactionResponse(response);
+    return ClientHelper.buildExistTransactionResponse(response);
   }
 
   /**
-   * 顺序批量获取历史transaction
-   * @param ledgerUri 目标ledger的URI标识
-   * @param clue 线索id, ""代表无clue
-   * @param beginSequence 起始交易的序号
-   * @param limit 返回的历史交易数量
-   * @param opControl 请求控制项
+   * 顺序批量获取历史记录
+   * @param ledgerUri       目标ledger的URI标识
+   * @param clue            线索id, ""代表无clue
+   * @param beginSequence   起始记录的序号
+   * @param limit           返回的历史交易数量
+   * @param opControl       请求控制项
    * @return
    */
   public ListTransactionsResponse listTransactions(
@@ -218,9 +224,9 @@ public class MyLedgerLightClient {
 
   /**
    * 新增成员
-   * @param ledgerUri 目标ledgerURI
-   * @param memberInfo 成员信息
-   * @param operationControl 请求控制项
+   * @param ledgerUri         目标ledgerURI
+   * @param memberInfo        成员信息
+   * @param operationControl  请求控制项
    * @return
    */
   public CreateMemberResponse createMember(
@@ -235,9 +241,9 @@ public class MyLedgerLightClient {
 
   /**
    * 更新成员状态
-   * @param ledgerUri 目标ledgerURI
-   * @param memberInfo 成员信息（包含成员的公钥信息）
-   * @param operationControl 请求控制项
+   * @param ledgerUri         目标ledgerURI
+   * @param memberInfo        成员信息（包含成员的公钥信息）
+   * @param operationControl  请求控制项
    * @return
    */
   public UpdateMemberResponse updateMember(
@@ -251,10 +257,49 @@ public class MyLedgerLightClient {
   }
 
   /**
+   * 更新成员认证方式
+   * @param ledgerUri           目标ledgerURI
+   * @param memberId            成员Id
+   * @param publicKey           公钥
+   * @param operationControl    请求控制项
+   * @return
+   */
+  public UpdateMemberKeyResponse updateMemberKey(
+          String ledgerUri,
+          String memberId,
+          ByteString publicKey,
+          OperationControl operationControl) {
+    ClientHelper.checkUserPublicKey(publicKey);
+    ExecuteTxRequest request =
+            ClientHelper.buildUpdateMemberKeyRequest(ledgerUri, memberId, publicKey, operationControl, this);
+    ExecuteTxResponse response = callTxResponse(request, operationControl);
+    return ClientHelper.buildUpdateMemberKeyResponse(response);
+  }
+
+  /**
+   * 更新成员权限列表
+   * @param ledgerUri           目标ledgerURI
+   * @param memberId            成员Id
+   * @param permissions         权限列表
+   * @param operationControl    请求控制项
+   * @return
+   */
+  public UpdateMemberAclsResponse updateMemberAcls(
+          String ledgerUri,
+          String memberId,
+          List<PermissionItem> permissions,
+          OperationControl operationControl) {
+    ExecuteTxRequest request =
+            ClientHelper.buildUpdateMemberAclsRequest(ledgerUri, memberId, permissions, operationControl, this);
+    ExecuteTxResponse response = callTxResponse(request, operationControl);
+    return ClientHelper.buildUpdateMemberAclsResponse(response);
+  }
+
+  /**
    * 删除成员
-   * @param ledgerUri 目标ledgerURI
-   * @param memberId 成员的公钥
-   * @param opControl 请求控制项
+   * @param ledgerUri       目标ledgerURI
+   * @param memberId        成员ID
+   * @param opControl       请求控制项
    * @return
    */
   public DeleteMemberResponse deleteMember(
@@ -269,9 +314,9 @@ public class MyLedgerLightClient {
 
   /**
    * 获取账本上的成员
-   * @param ledgerUri 目标ledgerURI
-   * @param memberId 成员ID
-   * @param operationControl 请求控制项
+   * @param ledgerUri           目标ledgerURI
+   * @param memberId            成员ID
+   * @param operationControl    请求控制项
    * @return
    */
   public GetMemberResponse getMember(
@@ -285,10 +330,29 @@ public class MyLedgerLightClient {
   }
 
   /**
+   * 获取成员列表
+   * @param ledgerUri         目标ledgerURI
+   * @param lastMemberId      上次查询最后一个memberId，第一次为""
+   * @param limit             返回数目
+   * @param operationControl  请求控制项
+   * @return
+   */
+  public ListMembersResponse listMembers(
+          String ledgerUri,
+          String lastMemberId,
+          int limit,
+          OperationControl operationControl) {
+    ExecuteTxRequest request =
+            ClientHelper.buildListMembersRequest(ledgerUri, lastMemberId, limit, operationControl, this);
+    ExecuteTxResponse response = callTxResponse(request, operationControl);
+    return ClientHelper.buildListMembersResponse(response);
+  }
+
+  /**
    * 设置信任锚点
-   * @param ledgerUri 目标ledgerURI
-   * @param sequence 信任锚点所在的交易序号
-   * @param op 请求控制项
+   * @param ledgerUri     目标ledgerURI
+   * @param sequence      信任锚点所在的交易序号
+   * @param op            请求控制项
    * @return
    */
   public SetTrustPointResponse setTrustPoint(
@@ -303,8 +367,8 @@ public class MyLedgerLightClient {
 
   /**
    * 获取信任锚点
-   * @param ledgerUri 目标ledger的URI标识
-   * @param op 请求控制项
+   * @param ledgerUri           目标ledger的URI标识
+   * @param op                  请求控制项
    * @return
    */
   public GetTrustPointResponse getTrustPoint(
@@ -317,14 +381,14 @@ public class MyLedgerLightClient {
   }
 
   /**
-   * 可信授时
-   * @param ledgerUri 目标账本的URI标识
-   * @param timestampInSeconds 可信时间戳
-   * @param proof 可信授时证书
-   * @param op 请求控制项
+   * 创建时间锚点
+   * @param ledgerUri           目标账本的URI标识
+   * @param timestampInSeconds  创建时间
+   * @param proof               可信授时证书
+   * @param op                  请求控制项
    * @return
    */
-  public GrantTimeResponse grantTime(
+  public CreateTimeAnchorResponse createTimeAnchor(
       String ledgerUri,
       long timestampInSeconds,
       byte[] proof,
@@ -332,23 +396,105 @@ public class MyLedgerLightClient {
     ExecuteTxRequest request =
         ClientHelper.buildGrantTimeRequest(ledgerUri, timestampInSeconds, proof, op, this);
     ExecuteTxResponse response = callTxResponse(request, op);
-    return ClientHelper.buildGrantTimeResponse(response);
+    return ClientHelper.buildCreateTimeAnchorResponse(response);
   }
 
   /**
    * 获取最新的可是授时
-   * @param ledgerUri 目标ledger的URI的标识
-   * @param op 请求控制项
+   * @param ledgerUri   目标ledger的URI的标识
+   * @param op          请求控制项
    * @return
    */
-  public GetLastGrantTimeResponse getLastGrantTime(
+  public GetLastTimeAnchorResponse getLastTimeAnchor(
       String ledgerUri,
       OperationControl op) {
     ExecuteTxRequest request =
         ClientHelper.buildGetLastGrantTimeRequest(ledgerUri, op, this);
     ExecuteTxResponse response = callTxResponse(request, op);
-    return ClientHelper.buildGetLastGrantTimeResponse(response);
+    return ClientHelper.buildGetLastTimeAnchorResponse(response);
   }
+
+  /**
+   * 激活账本成员
+   * @param ledgerUri   目标ledger的URI的标识
+   * @param memberId    成员ID
+   * @param op          请求控制项
+   * @return
+   */
+  public EnableMemberResponse enableMember(
+      String ledgerUri,
+      String memberId,
+      OperationControl op) {
+    ExecuteTxRequest request =
+        ClientHelper.buildEnableMemberRequest(ledgerUri, memberId, op, this);
+    ExecuteTxResponse response = callTxResponse(request, op);
+    return ClientHelper.buildEnableMemberResponse(response);
+  }
+
+  /**
+   * 禁用账本成员
+   * @param ledgerUri   目标ledger的URI的标识
+   * @param memberId    成员ID
+   * @param op          请求控制项
+   * @return
+   */
+  public DisableMemberResponse disableMember(
+      String ledgerUri,
+      String memberId,
+      OperationControl op) {
+    ExecuteTxRequest request =
+        ClientHelper.buildDisableMemberRequest(ledgerUri, memberId, op, this);
+    ExecuteTxResponse response = callTxResponse(request, op);
+    return ClientHelper.buildDisableMemberResponse(response);
+  }
+
+  /**
+   * 批量查看时间锚点
+   * @param ledgerUri       目标ledger的URI的标识
+   * @param startSequence   起始序号
+   * @param limit           最大返回数量
+   * @param op              请求控制项
+   * @return
+   */
+  public ListTimeAnchorsResponse listTimeAnchors(
+      String ledgerUri,
+      long startSequence,
+      int limit,
+      boolean reverse,
+      OperationControl op) {
+    ExecuteTxRequest request =
+        ClientHelper.buildListTimeAnchorsRequest(ledgerUri, startSequence, limit, reverse, op, this);
+    ExecuteTxResponse response = callTxResponse(request, op);
+    return ClientHelper.buildListTimeAnchorsResponse(response);
+  }
+
+  /**
+   * 获取区块信息
+   * @param ledgerUri       目标ledger的URI的标识
+   * @param blockSequence   区块序号
+   * @param op              请求控制项
+   * @return
+   */
+  public GetBlockInfoResponse getBlockInfo(
+      String ledgerUri,
+      long blockSequence,
+      OperationControl op) {
+    ExecuteTxRequest request =
+        ClientHelper.buildGetBlockInfoRequest(ledgerUri, blockSequence, op, this);
+    ExecuteTxResponse response = callTxResponse(request, op);
+    return ClientHelper.buildGetBlockInfoResponse(response);
+  }
+
+  public GetProofResponse getProof(
+      String ledgerUri,
+      long txSequence,
+      OperationControl op) {
+    ExecuteTxRequest request =
+        ClientHelper.buildGetProofRequest(ledgerUri, txSequence, op, this);
+    ExecuteTxResponse response = callTxResponse(request, op);
+    return ClientHelper.buildGetProofResponse(response);
+  }
+
 
   LedgerDBServiceGrpc.LedgerDBServiceBlockingStub getBlockingStub(
       OperationControl operationControl) {
@@ -365,41 +511,14 @@ public class MyLedgerLightClient {
     try {
       ExecuteTxResponse executeTxResponse =
           blockingStub.executeTx(executeTxRequest);
-      operationControl.setStatus(executeTxResponse.getStatus());
-      try {
-        TxResponse txResponse =
-                TxResponse.parseFrom(executeTxResponse.getResponseMessage());
-        operationControl.setOpStatus(txResponse.getOpStatus());
-      } catch (InvalidProtocolBufferException e) {
-        operationControl.setOpStatus(ApiStatus.newBuilder().setCode(ApiStatus.Code.INTERNAL).build());
-      }
       return executeTxResponse;
     } catch (StatusRuntimeException t) {
-      System.out.println("exception in call tx");
-      System.out.println(t.getMessage());
-      t.printStackTrace();
-      operationControl.setStatus(ApiStatus.newBuilder().setCode(ApiStatus.Code.UNAVAILABLE).setMessage("Network unablable").build());
-      return handleCallTxResponseThrowable(t);
+      throw new LedgerRequestException(t);
     }
-  }
-
-
-  ExecuteTxResponse handleCallTxResponseThrowable(Throwable t) {
-    Status status = Status.fromThrowable(t);
-    ApiStatus apiStatus =
-        ApiStatus.newBuilder()
-            .setCodeValue(status.getCode().value())
-            .build();
-    return ExecuteTxResponse.newBuilder()
-        .setStatus(apiStatus).build();
   }
 
   public String getClientId() {
     return clientId;
-  }
-
-  public int getClientSequenceAfterIncrement() {
-    return clientSequenceCounter.incrementAndGet();
   }
 
 }
