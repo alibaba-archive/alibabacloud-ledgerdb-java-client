@@ -1,4 +1,4 @@
-package com.antfin.ledgerdb.sdk;
+package com.antfin.ledgerdb.sdk.exception;
 
 public class LedgerException extends RuntimeException {
 

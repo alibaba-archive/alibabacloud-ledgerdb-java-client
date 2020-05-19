@@ -1,5 +1,8 @@
 package com.antfin.ledgerdb.sdk.hash;
 
+import com.antfin.ledgerdb.sdk.exception.LedgerException;
+import com.antfin.ledgerdb.sdk.proto.Digest;
+
 public class HashFactory {
   /**
    * Get default hash
@@ -10,16 +13,12 @@ public class HashFactory {
     return new SHA256Hash();
   }
 
-  public static IHash getHash(HashTypeEnum hashTypeEnum) {
-    switch (hashTypeEnum) {
+  public static IHash getHash(Digest.HashType hashType) {
+    switch (hashType) {
       case SHA256:
         return new SHA256Hash();
-      case SM3:
-        return new SM3Hash();
-      case Keccak:
-        return new Keccak256();
       default:
-        return new SHA256Hash();
+        throw new LedgerException("Unimplemented hash");
     }
   }
 }

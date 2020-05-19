@@ -1,22 +1,25 @@
 package com.antfin.ledgerdb.sdk.common;
 
-import com.antfin.ledgerdb.sdk.crypto.KeyPair;
-import com.antfin.ledgerdb.sdk.proto.MemberInfo;
+import com.antfin.ledgerdb.sdk.crypto.SignerKeyPair;
+import com.antfin.ledgerdb.sdk.proto.Sender;
 
 public class SignerProfile {
 
     private String memberId;
 
-    private final KeyPair keyPair;
+    private Sender.SenderType senderType = Sender.SenderType.REGULAR;
 
-    public SignerProfile(String memberId, KeyPair keyPair) {
+    private final SignerKeyPair signerKeyPair;
+
+    public SignerProfile(String memberId, Sender.SenderType senderType, SignerKeyPair signerKeyPair) {
         this.memberId = memberId;
-        this.keyPair = keyPair;
+        this.senderType = senderType;
+        this.signerKeyPair = signerKeyPair;
     }
 
-    public SignerProfile(KeyPair keyPair) {
+    public SignerProfile(SignerKeyPair signerKeyPair) {
         this.memberId = "";
-        this.keyPair = keyPair;
+        this.signerKeyPair = signerKeyPair;
     }
 
     public void setMemberId(String memberId) {
@@ -27,7 +30,13 @@ public class SignerProfile {
         return memberId;
     }
 
-    public KeyPair getKeyPair() {
-        return keyPair;
+    public void setSenderType(Sender.SenderType senderType) {
+        this.senderType = senderType;
+    }
+
+    public Sender.SenderType getSenderType() { return senderType; }
+
+    public SignerKeyPair getSignerKeyPair() {
+        return signerKeyPair;
     }
 }

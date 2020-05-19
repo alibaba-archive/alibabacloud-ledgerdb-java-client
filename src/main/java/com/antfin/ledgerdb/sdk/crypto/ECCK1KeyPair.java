@@ -1,8 +1,7 @@
 package com.antfin.ledgerdb.sdk.crypto;
 
-import com.antfin.ledgerdb.sdk.crypto.key.LedgerKeyPair;
-import com.antfin.ledgerdb.sdk.LedgerException;
-import com.antfin.ledgerdb.sdk.crypto.key.LedgerKeyPair;
+import com.antfin.ledgerdb.sdk.exception.LedgerException;
+import com.antfin.ledgerdb.sdk.proto.Signature;
 import com.antfin.ledgerdb.sdk.util.NumericUtils;
 
 import org.apache.commons.lang3.ArrayUtils;
@@ -15,34 +14,100 @@ import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
 import org.bouncycastle.crypto.params.ECPublicKeyParameters;
 import org.bouncycastle.crypto.signers.ECDSASigner;
 import org.bouncycastle.crypto.signers.HMacDSAKCalculator;
+import org.bouncycastle.jcajce.provider.asymmetric.ec.BCECPrivateKey;
+import org.bouncycastle.jcajce.provider.asymmetric.ec.BCECPublicKey;
 import org.bouncycastle.math.ec.ECAlgorithms;
 import org.bouncycastle.math.ec.ECPoint;
+import org.bouncycastle.math.ec.FixedPointCombMultiplier;
 import org.bouncycastle.math.ec.custom.sec.SecP256K1Curve;
-import org.bouncycastle.util.encoders.Hex;
 
 import java.math.BigInteger;
+import java.security.KeyPair;
 import java.util.Arrays;
 
-public class ECCK1KeyPair extends KeyPair {
+/**
+ * Elliptic Curve SECP-256 k1 generated key pair
+ * <p> Adapted from <a
+ * href="https://github.com/web3j/web3j/blob/master/crypto/src/main/java/org/web3j/crypto/ECKeyPair.java">
+ * ECKeyPair</a> and <a
+ * href="https://github.com/web3j/web3j/blob/master/crypto/src/main/java/org/web3j/crypto/Sign.java">
+ * Sign</a>
+ */
+public class ECCK1KeyPair implements SignerKeyPair {
 
   private static final X9ECParameters CURVE_PARAMS = CustomNamedCurves.getByName("secp256k1");
   private static final ECDomainParameters CURVE = new ECDomainParameters(
       CURVE_PARAMS.getCurve(), CURVE_PARAMS.getG(), CURVE_PARAMS.getN(), CURVE_PARAMS.getH());
   private static final BigInteger HALF_CURVE_ORDER = CURVE_PARAMS.getN().shiftRight(1);
 
-  public ECCK1KeyPair(LedgerKeyPair innerKeyPair) {
-    super(innerKeyPair);
+  private final byte[] privateKey;
+  private final byte[] publicKey;
+  private final byte[] publicKeyEncoded;
+
+  public static BigInteger publicKeyFromPrivate(BigInteger privKey) {
+    ECPoint point = publicPointFromPrivate(privKey);
+
+    byte[] encoded = point.getEncoded(false);
+    return new BigInteger(1, Arrays.copyOfRange(encoded, 1, encoded.length)); // remove prefix
   }
 
-  public ECCK1KeyPair(byte[] publicKey) {
-    super(publicKey);
+  /**
+   * Returns public key point from the given private key.
+   *
+   * @param privKey the private key to derive the public key from
+   * @return ECPoint public key
+   */
+  public static ECPoint publicPointFromPrivate(BigInteger privKey) {
+    /*
+     * TODO: FixedPointCombMultiplier currently doesn't support scalars longer than the group
+     * order, but that could change in future versions.
+     */
+    if (privKey.bitLength() > CURVE.getN().bitLength()) {
+      privKey = privKey.mod(CURVE.getN());
+    }
+    return new FixedPointCombMultiplier().multiply(CURVE.getG(), privKey);
   }
 
-  @Override
+
+  public ECCK1KeyPair(byte[] privateKey) {
+    BigInteger privateKeyInt = NumericUtils.toBigInt(privateKey);
+    byte[] encoded = publicPointFromPrivate(privateKeyInt).getEncoded(false);
+    this.publicKeyEncoded = encoded;
+    this.publicKey = Arrays.copyOfRange(encoded, 1, encoded.length);
+    this.privateKey = Arrays.copyOfRange(privateKey, 0, privateKey.length);
+  }
+
+  public ECCK1KeyPair(byte[] privateKey, byte[] publicKey) {
+    this.privateKey = Arrays.copyOfRange(privateKey, 0, privateKey.length);
+    this.publicKey = Arrays.copyOfRange(publicKey, 0, publicKey.length);
+    byte[] pubKeyEncoded = new byte[65];
+    pubKeyEncoded[0] = 0x04;
+    System.arraycopy(getPublicKey(),0, pubKeyEncoded,1, getPublicKey().length);
+    this.publicKeyEncoded = pubKeyEncoded;
+  }
+
+  public ECCK1KeyPair(KeyPair keyPair) {
+    BCECPrivateKey privateKeyBC = (BCECPrivateKey) keyPair.getPrivate();
+    BCECPublicKey publicKeyBC = (BCECPublicKey) keyPair.getPublic();
+
+    BigInteger privateKeyValue = privateKeyBC.getD();
+    privateKey = NumericUtils.toBytesPadded(privateKeyValue, 32);
+
+    byte[] publicKeyBytes = publicKeyBC.getQ().getEncoded(false);
+    publicKey = Arrays.copyOfRange(publicKeyBytes, 1, publicKeyBytes.length);
+    this.publicKeyEncoded = publicKeyBytes;
+  }
+
+  public static ECCK1KeyPair create(KeyPair keyPair) {
+    return new ECCK1KeyPair(keyPair);
+  }
+
+  public static ECCK1KeyPair createFromPrivateKey(byte[] privateKey) {
+    return new ECCK1KeyPair(privateKey);
+  }
+
   public byte[] sign(byte[] message) {
     if (ArrayUtils.isEmpty(message) || message.length != 32) {
-      //throw new MychainSdkException(ErrorCode.SDK_INVALID_PARAMETER,
-      //    "need hash size 32 but " + (ArrayUtils.isEmpty(message) ? 0 : message.length));
       throw new LedgerException("need hash size 32 but " + (ArrayUtils.isEmpty(message) ? 0 : message.length));
     }
 
@@ -68,27 +133,17 @@ public class ECCK1KeyPair extends KeyPair {
       throw new RuntimeException("Could not construct a recoverable key. This should never happen.");
     }
 
-    // 1 header + 32 bytes for R + 32 bytes for S
-    byte v = (byte)recId;
+    // 32 bytes for R + 32 bytes for S
     byte[] r = NumericUtils.toBytesPadded(components[0], 32);
     byte[] s = NumericUtils.toBytesPadded(components[1], 32);
-
-    //byte[] sig = new byte[65];
-    //System.arraycopy(r, 0, sig, 0, 32);
-    //System.arraycopy(s, 0, sig, 32, 32);
-    //sig[64] = v;
-    //return sig;
 
     // v is not included in ledger sign
     byte[] sig = new byte[64];
     System.arraycopy(r, 0, sig, 0, 32);
     System.arraycopy(s, 0, sig, 32, 32);
-    System.out.println("signature");
-    System.out.println(Hex.toHexString(sig));
     return sig;
   }
 
-  @Override
   public boolean verify(byte[] signature, byte[] data) {
     if (ArrayUtils.isEmpty(signature) || signature.length < 64) {
       throw new LedgerException("need signature size 64 but "
@@ -201,10 +256,19 @@ public class ECCK1KeyPair extends KeyPair {
   }
 
   public byte[] getPublicKeyWithHeader() {
-    byte[] pubkey = new byte[65];
-    pubkey[0] = 0x04;
+    return Arrays.copyOfRange(publicKeyEncoded, 0, publicKeyEncoded.length);
+  }
 
-    System.arraycopy(super.getPublicKey(),0, pubkey,1, super.getPublicKey().length);
-    return pubkey;
+  @Override
+  public Signature.SignatureType getSignatureType() {
+    return Signature.SignatureType.SECP256K1;
+  }
+
+  public byte[] getPublicKey() {
+    return Arrays.copyOfRange(publicKey, 0 ,publicKey.length);
+  }
+
+  public byte[] getPrivateKey() {
+    return Arrays.copyOfRange(privateKey, 0, privateKey.length);
   }
 }

@@ -1,5 +1,7 @@
 package com.antfin.ledgerdb.sdk.hash;
 
+import com.antfin.ledgerdb.sdk.proto.Digest;
+
 public interface IHash {
 
   /**
@@ -7,7 +9,7 @@ public interface IHash {
    *
    * @return
    */
-  HashTypeEnum getHashType();
+  Digest.HashType getHashType();
 
   /**
    * get HashUtils result

@@ -1,15 +1,14 @@
 package com.antfin.ledgerdb.sdk;
 
-//import com.alipay.mychain.sdk.crypto.hash.HashFactory;
-//import com.alipay.mychain.sdk.crypto.hash.HashTypeEnum;
 import com.antfin.ledgerdb.sdk.common.*;
+import com.antfin.ledgerdb.sdk.exception.LedgerException;
 import com.antfin.ledgerdb.sdk.hash.HashFactory;
-import com.antfin.ledgerdb.sdk.hash.HashTypeEnum;
 import com.antfin.ledgerdb.sdk.proto.*;
-import com.antfin.ledgerdb.sdk.hash.HashFactory;
-import com.antfin.ledgerdb.sdk.hash.HashTypeEnum;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
+
+import java.net.URI;
+import java.util.List;
 
 class ClientHelper {
 
@@ -24,29 +23,56 @@ class ClientHelper {
     return builder.build();
   }
 
+  static URI checkLedgerUri(String ledgerUri) {
+    URI uri = URI.create(ledgerUri);
+    if (!"ledger".equals(uri.getScheme())) {
+      throw new LedgerException("Invalid schema in ledger uri: " + ledgerUri);
+    }
+    if (uri.getPath().length() == 0 || "/".equals(uri.getPath())) {
+      throw new LedgerException("Ledger id not found in uri: " +ledgerUri);
+    }
+
+    String ledgerId = uri.getPath().substring(1);
+    for (int i = 0; i < ledgerId.length(); i++) {
+      char c = ledgerId.charAt(i);
+      if ((!Character.isLetterOrDigit(c)) && (c != '_') && (c != '-')) {
+        throw new LedgerException("Invalid ledger id: " + ledgerId);
+      }
+    }
+    return uri;
+  }
+
+  static void checkUserPublicKey(ByteString publicKey) {
+    byte[] publicKeyBytes = publicKey.toByteArray();
+    if (publicKeyBytes.length != 65) {
+      throw new LedgerException("Public key should be 65 bytes long");
+    }
+    if (publicKeyBytes[0] != 0x04) {
+      throw new LedgerException("First byte of public key should be 0x04");
+    }
+  }
+
   private static TxRequest.Builder generateTxRequestTemplate(
+      String ledgerUri,
       OperationControl opControl,
-      MyLedgerLightClient client) {
+      LedgerDBLightClient client) {
     TxRequest.Builder builder = TxRequest.newBuilder();
     builder.setApiVersion(ApiVersion.API_VERSION_1);
     builder.setClientToken(client.getClientId());
-    builder.setClientSequence(client.getClientSequenceAfterIncrement());
     builder.setTimestampMillis(opControl.getTimestampMills());
     builder.setNonce(opControl.getNonce());
-    builder.setLedgerId(opControl.getLedgerId());
-    builder.addAllClues(opControl.getClues());
-    if (opControl.isUseDelegateSigner()) {
-      throw new UnsupportedOperationException("Delete signer is not supported now");
-    } else {
-      System.out.println("add regular senders");
-      for (SignerProfile signerProfile : opControl.getSignerProfiles()) {
-        System.out.print(signerProfile.getMemberId());
-        builder.addSenders(
-            Sender.newBuilder()
-                .setMemberId(signerProfile.getMemberId())
-                .setPublicKey(ByteString.copyFrom(signerProfile.getKeyPair().getPublicKeyWithHeader()))
-                .setSenderType(Sender.SenderType.REGULAR));
-      }
+    URI uri = checkLedgerUri(ledgerUri);
+    String ledgerId = uri.getPath().substring(1);
+    builder.setLedgerId(ledgerId);
+    for (String clue : opControl.getClues()) {
+      builder.addClues(ByteString.copyFromUtf8(clue));
+    }
+    for (SignerProfile signerProfile : opControl.getSignerProfiles()) {
+      builder.addSenders(
+              Sender.newBuilder()
+                      .setMemberId(signerProfile.getMemberId())
+                      .setSenderType(signerProfile.getSenderType())
+                      .setPublicKey(ByteString.copyFrom(signerProfile.getSignerKeyPair().getPublicKeyWithHeader())));
     }
     return builder;
   }
@@ -55,36 +81,26 @@ class ClientHelper {
       OperationControl opControl,
       TxRequest request) {
     RequestAuth.Builder builder = RequestAuth.newBuilder();
-    byte[] msgHash = HashFactory.getHash(HashTypeEnum.SHA256).hash(request.toByteArray());
+    byte[] requestMessage = request.toByteArray();
+    opControl.setRequestMessage(requestMessage);
+    byte[] msgHash = HashFactory.getHash(opControl.getDigestHashType()).hash(requestMessage);
     builder.setDigest(
         Digest.newBuilder()
-            .setHashType(Digest.HashType.SHA256)
+            .setHashType(opControl.getDigestHashType())
             .setHash(ByteString.copyFrom(msgHash))
             .build());
-
-    if (opControl.isUseDelegateSigner()) {
-      for (LedgerSignerEntity signer : opControl.getDelegateSigners()) {
-        byte[] sig = signer.sign(msgHash);
-        Signature signature =
-            Signature.newBuilder()
-                .setSign(ByteString.copyFrom(sig))
-                .setSignType(signer.getSignatureType())
-                .build();
-        builder.addSigns(signature);
-      }
-    } else {
-      for (SignerProfile signerProfile : opControl.getSignerProfiles()) {
-        byte[] sig = signerProfile.getKeyPair().sign(msgHash);
-        Signature signature =
-            Signature.newBuilder()
-                .setSign(ByteString.copyFrom(sig))
-                .setSignType(signerProfile.getKeyPair().getSignatureType())
-                .build();
-        builder.addSigns(signature);
-      }
+    for (SignerProfile signerProfile : opControl.getSignerProfiles()) {
+      byte[] sig = signerProfile.getSignerKeyPair().sign(msgHash);
+      Signature signature =
+              Signature.newBuilder()
+                      .setSign(ByteString.copyFrom(sig))
+                      .setSignType(signerProfile.getSignerKeyPair().getSignatureType())
+                      .build();
+      builder.addSigns(signature);
     }
-
-    return builder.build();
+    RequestAuth requestAuth = builder.build();
+    opControl.setRequestAuth(requestAuth);
+    return requestAuth;
   }
 
   private static ExecuteTxRequest buildExecuteTxRequest(
@@ -99,8 +115,8 @@ class ClientHelper {
       String ledgerUri,
       byte[] data,
       OperationControl opControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(opControl, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, opControl, client);
     txBuilder.setCustomPayload(ByteString.copyFrom(data));
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), opControl);
   }
@@ -109,8 +125,8 @@ class ClientHelper {
       String ledgerUri,
       long txSequence,
       OperationControl opControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(opControl, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, opControl, client);
     txBuilder.setGetTxPayload(
         GetTxRequestPayload.newBuilder().setSequence(txSequence).build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), opControl);
@@ -120,8 +136,8 @@ class ClientHelper {
       String ledgerUri,
       long txSequence,
       OperationControl opControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(opControl, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, opControl, client);
     txBuilder.setExistTxPayload(
         ExistTxRequestPayload.newBuilder().setSequence(txSequence).build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), opControl);
@@ -133,31 +149,36 @@ class ClientHelper {
       long start,
       int limit,
       OperationControl opControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(opControl, client);
-    txBuilder.setListTxsPayload(ListTxsRequestPayload.newBuilder().setStartSeq(start).setLimit(limit).setClue(clue));
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, opControl, client);
+    txBuilder.setListTxsPayload(
+        ListTxsRequestPayload.newBuilder()
+            .setStartSeq(start)
+            .setLimit(limit)
+            .setClue(ByteString.copyFromUtf8(clue)));
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), opControl);
   }
 
-  static ExecuteTxRequest builGetBlockInfoRequest(
+  static ExecuteTxRequest buildGetBlockInfoRequest(
       String ledgerUri,
-      long blockSequeneNumber,
+      long blockSequence,
       OperationControl opControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(opControl, client);
-    txBuilder.setGetBlockinfoPayload(GetBlockInfoRequestPayload.newBuilder().setBlockSequence(blockSequeneNumber).build());
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, opControl, client);
+    txBuilder.setGetBlockinfoPayload(GetBlockInfoRequestPayload.newBuilder().setBlockSequence(blockSequence).build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), opControl);
   }
 
   static ExecuteTxRequest buildCreateLedgerRequest(
       String ledgerUri,
       LedgerMeta options,
+      List<MemberInfo> memberInfos,
       OperationControl opControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(opControl, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, opControl, client);
     txBuilder.setCreateLedgerPayload(
         CreateLedgerRequestPayload.newBuilder()
-            .setLedgerMeta(options));
+            .setLedgerMeta(options).addAllMemberInfo(memberInfos));
     return buildExecuteTxRequest(ledgerUri,
         txBuilder.build(),
         opControl);
@@ -166,8 +187,8 @@ class ClientHelper {
   static ExecuteTxRequest buildDeleteLedgerRequest(
       String ledgerUri,
       OperationControl opControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(opControl, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, opControl, client);
     txBuilder.setDeleteLedgerPayload(DeleteLedgerRequestPayload.newBuilder());
     return buildExecuteTxRequest(ledgerUri,
         txBuilder.build(),
@@ -178,8 +199,8 @@ class ClientHelper {
       String ledgerUri,
       LedgerMeta options,
       OperationControl opControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(opControl, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, opControl, client);
     txBuilder.setUpdateLedgerPayload(
         UpdateLedgerRequestPayload.newBuilder().setLedgerMeta(options));
     return buildExecuteTxRequest(
@@ -191,8 +212,8 @@ class ClientHelper {
   static ExecuteTxRequest buildStatLedgerRequest(
       String ledgerUri,
       OperationControl opControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(opControl, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, opControl, client);
     txBuilder.setStatLedgerPayload(StatLedgerRequestPayload.newBuilder().build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), opControl);
   }
@@ -200,18 +221,28 @@ class ClientHelper {
   static ExecuteTxRequest buildRecoverLedgerRequest(
       String ledgerUri,
       OperationControl opControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(opControl, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, opControl, client);
     txBuilder.setRecoverLedgerPayload(RecoverLedgerRequestPayload.newBuilder().build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), opControl);
   }
 
-  static ExecuteTxRequest bulidEnableMemberRequest(
+  static ExecuteTxRequest buildGetProofRequest(
+      String ledgerUri,
+      long txSequence,
+      OperationControl operationControl,
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, operationControl, client);
+    txBuilder.setGetProofPayload(GetProofRequestPayload.newBuilder().setTxSequence(txSequence).build());
+    return buildExecuteTxRequest(ledgerUri, txBuilder.build(), operationControl);
+  }
+
+  static ExecuteTxRequest buildEnableMemberRequest(
       String ledgerUri,
       String memberToEnable,
       OperationControl opControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(opControl, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, opControl, client);
     txBuilder.setEnableMemberPayload(EnableMemberRequestPayload.newBuilder().setMemberId(memberToEnable).build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), opControl);
   }
@@ -220,8 +251,8 @@ class ClientHelper {
       String ledgerUri,
       String memberId,
       OperationControl opControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(opControl, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, opControl, client);
     txBuilder.setDisableMemberPayload(DisableMemberRequestPayload.newBuilder().setMemberId(memberId).build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), opControl);
   }
@@ -230,8 +261,8 @@ class ClientHelper {
       String ledgerUri,
       MemberInfo memberInfo,
       OperationControl operationControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(operationControl, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, operationControl, client);
     txBuilder.setCreateMemberPayload(CreateMemberRequestPayload.newBuilder().setMemberInfo(memberInfo).build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), operationControl);
   }
@@ -240,21 +271,56 @@ class ClientHelper {
       String ledgerUri,
       MemberInfo memberInfo,
       OperationControl operationControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(operationControl, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, operationControl, client);
     txBuilder.setUpdateMemberPayload(UpdateMemberRequestPayload.newBuilder().setMemberInfo(memberInfo).build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), operationControl);
   }
 
+  static ExecuteTxRequest buildUpdateMemberKeyRequest(
+          String ledgerUri,
+          String memberId,
+          ByteString publicKey,
+          OperationControl operationControl,
+          LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, operationControl, client);
+    txBuilder.setUpdateMemberKeyPayload(UpdateMemberKeyRequestPayload.newBuilder().setMemberId(memberId).setPublicKey(publicKey).build());
+    return buildExecuteTxRequest(ledgerUri, txBuilder.build(), operationControl);
+  }
+
+  static ExecuteTxRequest buildUpdateMemberAclsRequest(
+          String ledgerUri,
+          String memberId,
+          List<PermissionItem> permissions,
+          OperationControl operationControl,
+          LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, operationControl, client);
+    txBuilder.setUpdateMemberPermissionsPayload(
+        UpdateMemberPermissionsRequestPayload.newBuilder()
+            .setMemberId(memberId).addAllPermissions(permissions).build());
+    return buildExecuteTxRequest(ledgerUri, txBuilder.build(), operationControl);
+  }
+
   static ExecuteTxRequest buildGetMemberRequest(
-      String ledgerUri,
-      String memberId,
-      OperationControl operationControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(operationControl, client);
-    //
+          String ledgerUri,
+          String memberId,
+          OperationControl operationControl,
+          LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, operationControl, client);
     txBuilder.setGetMemberPayload(
-        GetMemberRequestPayload.newBuilder().setMemberId(memberId).build());
+            GetMemberRequestPayload.newBuilder().setMemberId(memberId).build());
+    return buildExecuteTxRequest(ledgerUri, txBuilder.build(), operationControl);
+  }
+
+  static ExecuteTxRequest buildListMembersRequest(
+          String ledgerUri,
+          String lastMemberId,
+          int limit,
+          OperationControl operationControl,
+          LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, operationControl, client);
+    txBuilder.setListMembersPayload(
+            ListMembersRequestPayload.newBuilder().setLastMemberId(lastMemberId).setLimit(limit).build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), operationControl);
   }
 
@@ -262,8 +328,8 @@ class ClientHelper {
       String ledgerUri,
       String memberId,
       OperationControl operationControl,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(operationControl, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, operationControl, client);
     txBuilder.setDeleteMemberPayload(
         DeleteMemberRequestPayload.newBuilder().setMemberId(memberId).build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), operationControl);
@@ -274,10 +340,10 @@ class ClientHelper {
       long timeStampInSeconds,
       byte[] proof,
       OperationControl op,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(op, client);
-    txBuilder.setGrantTimePayload(
-        GrantTimeRequestPayload.newBuilder()
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, op, client);
+    txBuilder.setCreateTimeanchorPayload(
+        CreateTimeAnchorRequestPayload.newBuilder()
             .setTimestampSeconds(timeStampInSeconds)
             .setProof(ByteString.copyFrom(proof)).build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), op);
@@ -286,9 +352,9 @@ class ClientHelper {
   static ExecuteTxRequest buildGetLastGrantTimeRequest(
       String ledgerUri,
       OperationControl op,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(op, client);
-    txBuilder.setGetLastgranttimePayload(GetLastGrantTimeRequestPayload.newBuilder().build());
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, op, client);
+    txBuilder.setGetLastTimeanchorPayload(GetLastTimeAnchorRequestPayload.newBuilder().build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), op);
   }
 
@@ -296,8 +362,8 @@ class ClientHelper {
       String ledgerUri,
       long sequence,
       OperationControl op,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(op, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, op, client);
     txBuilder.setSetTrustpointPayload(
         SetTrustPointRequestPayload.newBuilder().setTrustSequence(sequence).build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), op);
@@ -306,22 +372,35 @@ class ClientHelper {
   static ExecuteTxRequest buildGetTrustPointRequest(
       String ledgerUri,
       OperationControl op,
-      MyLedgerLightClient client) {
-    TxRequest.Builder txBuilder = generateTxRequestTemplate(op, client);
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, op, client);
     txBuilder.setGetTrustpointPayload(
         GetTrustPointRequestPayload.newBuilder().build());
     return buildExecuteTxRequest(ledgerUri, txBuilder.build(), op);
   }
 
+  static ExecuteTxRequest buildListTimeAnchorsRequest(
+      String ledgerUri,
+      long startSequence,
+      int limit,
+      boolean reverse,
+      OperationControl op,
+      LedgerDBLightClient client) {
+    TxRequest.Builder txBuilder = generateTxRequestTemplate(ledgerUri, op, client);
+    txBuilder.setListTimeanchorsPayload(
+        ListTimeAnchorsRequestPayload.newBuilder()
+            .setStartSeq(startSequence).setLimit(limit).setReverse(reverse).build());
+    return buildExecuteTxRequest(ledgerUri, txBuilder.build(), op);
+  }
 
-  static void setLedgerResponse(
+  private static void setLedgerResponse(
       ExecuteTxResponse executeTxResponse,
       LedgerResponse<?> response) {
     response.setApiStatus(executeTxResponse.getStatus());
     response.setResponseAuth(executeTxResponse.getResponseAuth());
   }
 
-  static void setLedgerResponse(
+  private static void setLedgerResponse(
       TxResponse txResponse,
       LedgerResponse<?> response) {
     response.setOpStatus(txResponse.getOpStatus());
@@ -329,15 +408,16 @@ class ClientHelper {
     response.setRequestDigest(txResponse.getRequestDigest());
     response.setApiVersion(txResponse.getApiVersion());
     response.setTotalSequence(txResponse.getTotalSequence());
+    response.setBlockSequence(txResponse.getBlockSequence());
+    response.setStateRootHash(txResponse.getStateRootHash().toByteArray());
+    response.setTxHash(txResponse.getTxHash().toByteArray());
+
   }
 
-  static TxResponse buildResponse2(
+  static TxResponse buildResponse(
       ExecuteTxResponse executeTxResponse,
       LedgerResponse<?> response) {
     setLedgerResponse(executeTxResponse, response);
-    //if (response.getApiStatus().getCode() != ApiStatus.Code.OK) {
-    //  return TxResponse.getDefaultInstance();
-    //}
     response.setResponseAuth(executeTxResponse.getResponseAuth());
     TxResponse txResponse = getTxResponse(executeTxResponse);
     setLedgerResponse(txResponse, response);
@@ -345,68 +425,36 @@ class ClientHelper {
   }
 
   static AppendTransactionResponse buildAppendTransactionResponse(
-      ExecuteTxResponse response) {
-    AppendTransactionResponse appendTransactionResponse =
+      ExecuteTxResponse executeTxResponse) {
+    AppendTransactionResponse response =
         new AppendTransactionResponse();
-    setLedgerResponse(response, appendTransactionResponse);
-    if (appendTransactionResponse.getApiStatus().getCode() != ApiStatus.Code.OK) {
-      return appendTransactionResponse;
-    }
-    appendTransactionResponse.setResponseAuth(response.getResponseAuth());
-    try {
-      TxResponse txResponse = TxResponse.parseFrom(response.getResponseMessage());
-      setLedgerResponse(txResponse, appendTransactionResponse);
-      appendTransactionResponse.setTransactionId(
-          new TransactionId(txResponse.getTxHash()));
-    } catch (InvalidProtocolBufferException e) {
-      // ignore for now
-    }
-    return appendTransactionResponse;
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
+    response.setPayload(txResponse.getCustomPayload().toByteArray());
+    return response;
   }
 
   static GetTransactionResponse buildGetTransactionResponse(
-      ExecuteTxResponse response) {
-    GetTransactionResponse getTransactionResponse =
+      ExecuteTxResponse executeTxResponse) {
+    GetTransactionResponse response =
         new GetTransactionResponse();
-    setLedgerResponse(response, getTransactionResponse);
-    //if (getTransactionResponse.getApiStatus().getCode() != ApiStatus.Code.OK) {
-    //  return getTransactionResponse;
-    //}
-    getTransactionResponse.setResponseAuth(response.getResponseAuth());
-    try {
-      TxResponse txResponse = TxResponse.parseFrom(response.getResponseMessage());
-      setLedgerResponse(txResponse, getTransactionResponse);
-      GetTxResponsePayload payload = txResponse.getGetTxPayload();
-      getTransactionResponse.setPayload(payload);
-    } catch (InvalidProtocolBufferException e) {
-      // ignore for now
-    }
-    return getTransactionResponse;
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
+    response.setPayload(txResponse.getGetTxPayload());
+    return response;
   }
 
-  static VerifyTransactionResponse buildVerifyTransactionResponse(
-      ExecuteTxResponse response) {
-    VerifyTransactionResponse verifyTransactionResponse =
-        new VerifyTransactionResponse();
-    setLedgerResponse(response, verifyTransactionResponse);
-    //if (verifyTransactionResponse.getApiStatus().getCode() != ApiStatus.Code.OK) {
-    //  return verifyTransactionResponse;
-    //}
-    verifyTransactionResponse.setResponseAuth(response.getResponseAuth());
-    try {
-      TxResponse txResponse = TxResponse.parseFrom(response.getResponseMessage());
-      setLedgerResponse(txResponse, verifyTransactionResponse);
-    } catch (InvalidProtocolBufferException e) {
-      // ignore for now
-    }
-
-    return verifyTransactionResponse;
+  static ExistTransactionResponse buildExistTransactionResponse(
+      ExecuteTxResponse executeTxResponse) {
+    ExistTransactionResponse response =
+        new ExistTransactionResponse();
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
+    response.setPayload(txResponse.getExistTxPayload());
+    return response;
   }
 
   static ListTransactionsResponse buildListTransactionResponse(
       ExecuteTxResponse executeTxResponse) {
     ListTransactionsResponse response = new ListTransactionsResponse();
-    TxResponse txResponse = buildResponse2(executeTxResponse, response);
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
     response.setPayload(txResponse.getListTxsPayload());
     return response;
   }
@@ -414,7 +462,7 @@ class ClientHelper {
   static CreateLedgerResponse buildCreateLedgerResponse(
       ExecuteTxResponse executeTxResponse) {
     CreateLedgerResponse response = new CreateLedgerResponse();
-    TxResponse txResponse = buildResponse2(executeTxResponse, response);
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
     response.setPayload(txResponse.getCreateLedgerPayload());
     return response;
   }
@@ -422,7 +470,7 @@ class ClientHelper {
   static UpdateLedgerResponse buildUpdateLedgerResponse(
       ExecuteTxResponse executeTxResponse) {
     UpdateLedgerResponse response = new UpdateLedgerResponse();
-    TxResponse txResponse = buildResponse2(executeTxResponse, response);
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
     response.setPayload(txResponse.getUpdateLedgerPayload());
     return response;
   }
@@ -430,7 +478,7 @@ class ClientHelper {
   static StatLedgerResponse buildStatLedgerResponse(
       ExecuteTxResponse executeTxResponse) {
     StatLedgerResponse response = new StatLedgerResponse();
-    TxResponse txResponse = buildResponse2(executeTxResponse, response);
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
     response.setPayload(txResponse.getStatLedgerPayload());
     return response;
   }
@@ -438,7 +486,7 @@ class ClientHelper {
   static DeleteLedgerResponse buildDeleteLedgerResponse(
       ExecuteTxResponse executeTxResponse) {
     DeleteLedgerResponse response = new DeleteLedgerResponse();
-    TxResponse txResponse = buildResponse2(executeTxResponse, response);
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
     response.setPayload(txResponse.getDeleteLedgerPayload());
     return response;
   }
@@ -446,7 +494,7 @@ class ClientHelper {
   static CreateMemberResponse buildCreateMemberResponse(
       ExecuteTxResponse executeTxResponse) {
     CreateMemberResponse response = new CreateMemberResponse();
-    TxResponse txResponse = buildResponse2(executeTxResponse, response);
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
     response.setPayload(txResponse.getCreateMemberPayload());
     return response;
   }
@@ -454,15 +502,31 @@ class ClientHelper {
   static UpdateMemberResponse buildUpdateMemberResponse(
       ExecuteTxResponse executeTxResponse) {
     UpdateMemberResponse response = new UpdateMemberResponse();
-    TxResponse txResponse = buildResponse2(executeTxResponse, response);
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
     response.setPayload(txResponse.getUpdateMemberPayload());
+    return response;
+  }
+
+  static UpdateMemberKeyResponse buildUpdateMemberKeyResponse(
+          ExecuteTxResponse executeTxResponse) {
+    UpdateMemberKeyResponse response = new UpdateMemberKeyResponse();
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
+    response.setPayload(txResponse.getUpdateMemberKeyPayload());
+    return response;
+  }
+
+  static UpdateMemberAclsResponse buildUpdateMemberAclsResponse(
+          ExecuteTxResponse executeTxResponse) {
+    UpdateMemberAclsResponse response = new UpdateMemberAclsResponse();
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
+    response.setPayload(txResponse.getUpdateMemberPermissionsPayload());
     return response;
   }
 
   static DeleteMemberResponse buildDeleteMemberResponse(
       ExecuteTxResponse executeTxResponse) {
     DeleteMemberResponse response = new DeleteMemberResponse();
-    TxResponse txResponse = buildResponse2(executeTxResponse, response);
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
     response.setPayload(txResponse.getDeleteMemberPayload());
     return response;
   }
@@ -470,31 +534,39 @@ class ClientHelper {
   static GetMemberResponse buildGetMemberResponse(
       ExecuteTxResponse executeTxResponse) {
     GetMemberResponse response = new GetMemberResponse();
-    TxResponse txResponse = buildResponse2(executeTxResponse, response);
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
     response.setPayload(txResponse.getGetMemberPayload());
     return response;
   }
 
-  static GrantTimeResponse buildGrantTimeResponse(
-      ExecuteTxResponse executeTxResponse) {
-    GrantTimeResponse response = new GrantTimeResponse();
-    TxResponse txResponse = buildResponse2(executeTxResponse, response);
-    response.setPayload(txResponse.getGrantTimePayload());
+  static ListMembersResponse buildListMembersResponse(
+          ExecuteTxResponse executeTxResponse) {
+    ListMembersResponse response = new ListMembersResponse();
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
+    response.setPayload(txResponse.getListMembersPayload());
     return response;
   }
 
-  static GetLastGrantTimeResponse buildGetLastGrantTimeResponse(
+  static CreateTimeAnchorResponse buildCreateTimeAnchorResponse(
       ExecuteTxResponse executeTxResponse) {
-    GetLastGrantTimeResponse response = new GetLastGrantTimeResponse();
-    TxResponse txResponse = buildResponse2(executeTxResponse, response);
-    response.setPayload(txResponse.getGetLastgranttimePayload());
+    CreateTimeAnchorResponse response = new CreateTimeAnchorResponse();
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
+    response.setPayload(txResponse.getCreateTimeanchorPayload());
+    return response;
+  }
+
+  static GetLastTimeAnchorResponse buildGetLastTimeAnchorResponse(
+      ExecuteTxResponse executeTxResponse) {
+    GetLastTimeAnchorResponse response = new GetLastTimeAnchorResponse();
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
+    response.setPayload(txResponse.getGetLastTimeanchorPayload());
     return response;
   }
 
   static SetTrustPointResponse buildSetTrustPointResponse(
       ExecuteTxResponse executeTxResponse) {
     SetTrustPointResponse response = new SetTrustPointResponse();
-    TxResponse txResponse = buildResponse2(executeTxResponse, response);
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
     response.setPayload(txResponse.getSetTrustpointPayload());
     return response;
   }
@@ -502,8 +574,48 @@ class ClientHelper {
   static GetTrustPointResponse buildGetTrustPointResponse(
       ExecuteTxResponse executeTxResponse) {
     GetTrustPointResponse response = new GetTrustPointResponse();
-    TxResponse txResponse = buildResponse2(executeTxResponse, response);
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
     response.setPayload(txResponse.getGetTrustpointPayload());
+    return response;
+  }
+
+  static EnableMemberResponse buildEnableMemberResponse(
+      ExecuteTxResponse executeTxResponse) {
+    EnableMemberResponse response = new EnableMemberResponse();
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
+    response.setPayload(txResponse.getEnableMemberPayload());
+    return response;
+  }
+
+  static DisableMemberResponse buildDisableMemberResponse(
+      ExecuteTxResponse executeTxResponse) {
+    DisableMemberResponse response = new DisableMemberResponse();
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
+    response.setPayload(txResponse.getDisableMemberPayload());
+    return response;
+  }
+
+  static ListTimeAnchorsResponse buildListTimeAnchorsResponse(
+      ExecuteTxResponse executeTxResponse) {
+    ListTimeAnchorsResponse response = new ListTimeAnchorsResponse();
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
+    response.setPayload(txResponse.getListTimeanchorsPayload());
+    return response;
+  }
+
+  static GetBlockInfoResponse buildGetBlockInfoResponse(
+      ExecuteTxResponse executeTxResponse) {
+    GetBlockInfoResponse response = new GetBlockInfoResponse();
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
+    response.setPayload(txResponse.getGetBlockinfoPayload());
+    return response;
+  }
+
+  static GetProofResponse buildGetProofResponse(
+      ExecuteTxResponse executeTxResponse) {
+    GetProofResponse response = new GetProofResponse();
+    TxResponse txResponse = buildResponse(executeTxResponse, response);
+    response.setPayload(txResponse.getGetProofPayload());
     return response;
   }
 
@@ -511,8 +623,7 @@ class ClientHelper {
     try {
       return TxResponse.parseFrom(executeTxResponse.getResponseMessage());
     } catch (InvalidProtocolBufferException e) {
-      // ignore
-      return TxResponse.getDefaultInstance();
+      throw new LedgerException("Invalid proto exception", e);
     }
   }
 }

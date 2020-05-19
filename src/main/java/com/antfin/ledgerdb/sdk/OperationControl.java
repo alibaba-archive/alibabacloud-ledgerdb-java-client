@@ -1,15 +1,10 @@
 package com.antfin.ledgerdb.sdk;
 
 import com.antfin.ledgerdb.sdk.common.SignerProfile;
-import com.antfin.ledgerdb.sdk.proto.ApiStatus;
-import com.antfin.ledgerdb.sdk.proto.RequestAuth;
-import com.antfin.ledgerdb.sdk.proto.ResponseAuth;
-import com.antfin.ledgerdb.sdk.common.SignerProfile;
-import com.antfin.ledgerdb.sdk.crypto.KeyPair;
-import com.antfin.ledgerdb.sdk.proto.ApiStatus;
-import com.antfin.ledgerdb.sdk.proto.RequestAuth;
-import com.antfin.ledgerdb.sdk.proto.ResponseAuth;
+import com.antfin.ledgerdb.sdk.crypto.SecureRandomUtils;
+import com.antfin.ledgerdb.sdk.proto.*;
 
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
@@ -17,50 +12,69 @@ import java.util.Random;
 
 public class OperationControl {
 
+  /**
+   * 请求超时时间
+   */
   private long timeoutInMillis = 10000;
 
+  /**
+   * 线索
+   */
   private List<String> clues = new ArrayList<>();
 
+  /**
+   * 对请求内容进行摘要计算的算法类型
+   */
+  private Digest.HashType digestHashType = Digest.HashType.SHA256;
+
+  /**
+   * 对请求数据进行签名的相关信息
+   */
   private List<SignerProfile> signerProfiles = new LinkedList<>();
 
+  /**
+   * 幂等token
+   */
   private String clientToken;
 
-  private long clientSequence;
-
-  private String ledgerId;
-
+  /**
+   * 请求发起时间
+   */
   private long timestampMills = System.currentTimeMillis();
 
-  private long nonce = (new Random()).nextLong();
+  /**
+   * 防重放随机数
+   */
+  private long nonce = (SecureRandomUtils.secureRandom()).nextLong();
 
-  private long operationTimeInNanos;
-
-  private byte[] txHash;
-
-  private long sequence;
-
-  private byte[] requestMessage;
-
+  /**
+   * 用户对请求信息进行签名的相关信息
+   */
   private RequestAuth requestAuth;
 
-  private byte[] responseMessage;
+  /**
+   * 请求在被发送前序列化后结果，也是利用用户秘钥进行签名的输入
+   */
+  private byte[] requestMessage;
 
-  private ResponseAuth responseAuth;
+  public byte[] getRequestMessage() {
+    return requestMessage;
+  }
 
-  private ApiStatus status;
+  public void setRequestMessage(byte[] requestMessage) {
+    this.requestMessage = requestMessage;
+  }
 
-  private ApiStatus opStatus;
+  public void setRequestAuth(RequestAuth requestAuth) {
+    this.requestAuth = requestAuth;
+  }
 
-  private boolean useDelegateSigner;
-
-  private List<LedgerSignerEntity> delegateSigners;
+  public RequestAuth getRequestAuth() {
+    return requestAuth;
+  }
 
   public void setClientToken(String clientToken) {
     this.clientToken = clientToken;
-  }
-
-  public void setClientSequence(long clientSequence) {
-    this.clientSequence = clientSequence;
   }
 
   public void setNonce(long nonce) {
@@ -75,24 +89,12 @@ public class OperationControl {
     this.timeoutInMillis = timestampMills;
   }
 
-  public void setOperationTimeInNanos(long operationTimeInNanos) {
-    this.operationTimeInNanos = operationTimeInNanos;
-  }
-
-  public void setTxHash(byte[] txHash) {
-    this.txHash = txHash;
-  }
-
   public long getTimeoutInMillis() {
     return timeoutInMillis;
   }
 
   public String getClientToken() {
     return clientToken;
-  }
-
-  public long getClientSequence() {
-    return clientSequence;
   }
 
   public long getTimestampMills() {
@@ -103,62 +105,6 @@ public class OperationControl {
     return nonce;
   }
 
-  public long getOperationTimeInNanos() {
-    return operationTimeInNanos;
-  }
-
-  public byte[] getTxHash() {
-    return txHash;
-  }
-
-  public long getSequence() {
-    return sequence;
-  }
-
-  public void setSequence(long sequence) {
-    this.sequence = sequence;
-  }
-
-  public byte[] getRequestMessage() {
-    return requestMessage;
-  }
-
-  public RequestAuth getRequestAuth() {
-    return requestAuth;
-  }
-
-  public byte[] getResponseMessage() {
-    return responseMessage;
-  }
-
-  public ResponseAuth getResponseAuth() {
-    return responseAuth;
-  }
-
-  public ApiStatus getStatus() {
-    return status;
-  }
-
-  public void setStatus(ApiStatus status) {
-    this.status = status;
-  }
-
-  public ApiStatus getOpStatus() {
-    return opStatus;
-  }
-
-  public void setOpStatus(ApiStatus opStatus) {
-    this.opStatus = opStatus;
-  }
-
-  public void setLedgerId(String ledgerId) {
-    this.ledgerId = ledgerId;
-  }
-
-  public String getLedgerId() {
-    return ledgerId;
-  }
-
   public void setClues(List<String> clues) {
     this.clues = clues;
   }
@@ -167,23 +113,6 @@ public class OperationControl {
     return clues;
   }
 
-  public boolean isUseDelegateSigner() {
-    return useDelegateSigner;
-  }
-
-  public void setUseDelegateSigner(boolean useDelegateSigner) {
-    this.useDelegateSigner = useDelegateSigner;
-  }
-
-  public List<LedgerSignerEntity> getDelegateSigners() {
-    return delegateSigners;
-  }
-
-  public void setDelegateSigners(List<LedgerSignerEntity> delegateSigners) {
-    this.delegateSigners = delegateSigners;
-  }
-
-
   public List<SignerProfile> getSignerProfiles() {
     return signerProfiles;
   }
@@ -191,4 +120,17 @@ public class OperationControl {
   public void setSignerProfiles(List<SignerProfile> signerProfiles) {
     this.signerProfiles = signerProfiles;
   }
+
+  public void addSignerProfile(SignerProfile signerProfile) {
+    this.signerProfiles.add(signerProfile);
+  }
+
+  public void setDigestHashType(Digest.HashType digestHashType) {
+    this.digestHashType = digestHashType;
+  }
+
+  public Digest.HashType getDigestHashType() {
+    return digestHashType;
+  }
+
 }

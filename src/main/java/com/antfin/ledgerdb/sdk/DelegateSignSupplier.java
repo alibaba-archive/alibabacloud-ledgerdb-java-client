@@ -2,9 +2,9 @@ package com.antfin.ledgerdb.sdk;
 
 public interface DelegateSignSupplier {
 
-  public interface DelegateID {
+  interface DelegateID {
 
   }
 
-  public SignInfo delegateSign(DelegateID delegateId);
+  SignInfo delegateSign(DelegateID delegateId);
 }

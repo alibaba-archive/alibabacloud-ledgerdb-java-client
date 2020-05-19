@@ -1,8 +1,14 @@
 package com.antfin.ledgerdb.sdk.common;
 
-import com.antfin.ledgerdb.sdk.proto.*;
+import com.antfin.ledgerdb.sdk.proto.ApiStatus;
+import com.antfin.ledgerdb.sdk.proto.ApiVersion;
+import com.antfin.ledgerdb.sdk.proto.Digest;
+import com.antfin.ledgerdb.sdk.proto.LedgerInfo;
+import com.antfin.ledgerdb.sdk.proto.ResponseAuth;
 
 public abstract class LedgerResponse<PayloadT> {
+
+  protected PayloadT responsePayload;
 
   protected ResponseAuth responseAuth;
 
@@ -16,11 +22,31 @@ public abstract class LedgerResponse<PayloadT> {
 
   protected long opTimeNanos;
 
-  protected String txHash;
+  protected byte[] txHash;
 
   protected long totalSequence;
 
   protected LedgerInfo ledgerInfo;
+
+  protected long blockSequence;
+
+  protected byte[] stateRootHash;
+
+  public byte[] getStateRootHash() {
+    return stateRootHash;
+  }
+
+  public void setStateRootHash(byte[] stateRootHash) {
+    this.stateRootHash = stateRootHash;
+  }
+
+  public long getBlockSequence() {
+    return blockSequence;
+  }
+
+  public void setBlockSequence(long blockSequence) {
+    this.blockSequence = blockSequence;
+  }
 
   public long getTotalSequence() {
     return totalSequence;
@@ -38,11 +64,11 @@ public abstract class LedgerResponse<PayloadT> {
     this.opTimeNanos = opTimeNanos;
   }
 
-  public String getTxHash() {
+  public byte[] getTxHash() {
     return txHash;
   }
 
-  public void setTxHash(String txHash) {
+  public void setTxHash(byte[] txHash) {
     this.txHash = txHash;
   }
 
@@ -94,9 +120,13 @@ public abstract class LedgerResponse<PayloadT> {
     return ledgerInfo;
   }
 
-  public abstract void setPayload(PayloadT payload);
+  public void setPayload(PayloadT payload) {
+    this.responsePayload = payload;
+  }
 
-  public abstract PayloadT getPayload();
+  public PayloadT getPayload() {
+    return responsePayload;
+  }
 
 
 }

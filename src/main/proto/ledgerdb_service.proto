@@ -120,11 +120,11 @@ message TxRequest {
   ApiVersion api_version  = 1;
   string ledger_id        = 2;
   string client_token     = 3;
-  uint64 client_sequence  = 4;
-  uint64 timestamp_millis = 5;
-  uint64 nonce            = 6;
-  repeated string clues   = 7;
-  repeated Sender senders  = 8;
+  uint64 timestamp_millis = 4;
+  uint64 nonce            = 5; // Not used
+  repeated bytes clues    = 6;
+  bytes annotation        = 7;
+  repeated Sender senders = 8;
 
   oneof payload {
     bytes                      custom_payload        = 100;
@@ -138,21 +138,29 @@ message TxRequest {
     CreateMemberRequestPayload create_member_payload = 110;
     DeleteMemberRequestPayload delete_member_payload = 111;
     UpdateMemberRequestPayload update_member_payload = 112;
-    EnableMemberRequestPayload enable_member_payload = 113;
-    DisableMemberRequestPayload disable_member_payload = 114;
-    GetMemberRequestPayload    get_member_payload    = 115;
-    ListMembersRequestPayload  list_members_payload  = 116;
+    UpdateMemberKeyRequestPayload update_member_key_payload = 113;
+    UpdateMemberPermissionsRequestPayload update_member_permissions_payload = 114;
+    EnableMemberRequestPayload enable_member_payload = 115;
+    DisableMemberRequestPayload disable_member_payload = 116;
+    GetMemberRequestPayload    get_member_payload    = 117;
+    ListMembersRequestPayload  list_members_payload  = 118;
 
     SetTrustPointRequestPayload set_trustpoint_payload = 120;
     GetTrustPointRequestPayload get_trustpoint_payload = 121;
-    GrantTimeRequestPayload     grant_time_payload     = 122;
-    GetLastGrantTimeRequestPayload get_lastgranttime_payload = 123;
-    ListGrantTimeTxsRequestPayload list_grant_time_txs_payload = 124;
+    CreateTimeAnchorRequestPayload create_timeanchor_payload = 122;
+    GetLastTimeAnchorRequestPayload get_last_timeanchor_payload = 123;
+    ListTimeAnchorsRequestPayload list_timeanchors_payload = 124;
 
     GetTxRequestPayload        get_tx_payload        = 150;
     ExistTxRequestPayload      exist_tx_payload      = 151;
     ListTxsRequestPayload      list_txs_payload      = 152;
     GetBlockInfoRequestPayload get_blockinfo_payload = 153;
+    GetProofRequestPayload     get_proof_payload     = 154;
+
+    // kv request
+    KVGetRequestPayload        kv_get_payload        = 200;
+    KVSetRequestPayload        kv_set_payload        = 201;
+    KVDelRequestPayload        kv_del_payload        = 202;
   }
 }
 
@@ -179,21 +187,29 @@ message TxResponse {
     CreateMemberResponsePayload create_member_payload = 110;
     DeleteMemberResponsePayload delete_member_payload = 111;
     UpdateMemberResponsePayload update_member_payload = 112;
-    EnableMemberResponsePayload enable_member_payload = 113;
-    DisableMemberResponsePayload disable_member_payload = 114;
-    GetMemberResponsePayload    get_member_payload    = 115;
-    ListMembersResponsePayload  list_members_payload  = 116;
+    UpdateMemberKeyResponsePayload update_member_key_payload = 113;
+    UpdateMemberPermissionsResponsePayload update_member_permissions_payload = 114;
+    EnableMemberResponsePayload enable_member_payload = 115;
+    DisableMemberResponsePayload disable_member_payload = 116;
+    GetMemberResponsePayload    get_member_payload    = 117;
+    ListMembersResponsePayload  list_members_payload  = 118;
 
     SetTrustPointResponsePayload set_trustpoint_payload = 120;
     GetTrustPointResponsePayload get_trustpoint_payload = 121;
-    GrantTimeResponsePayload     grant_time_payload     = 122;
-    GetLastGrantTimeResponsePayload get_lastgranttime_payload = 123;
-    ListGrantTimeTxsResponsePayload list_grant_time_txs_payload = 124;
+    CreateTimeAnchorResponsePayload create_timeanchor_payload = 122;
+    GetLastTimeAnchorResponsePayload get_last_timeanchor_payload = 123;
+    ListTimeAnchorsResponsePayload list_timeanchors_payload = 124;
 
     GetTxResponsePayload        get_tx_payload        = 150;
     ExistTxResponsePayload      exist_tx_payload      = 151;
     ListTxsResponsePayload      list_txs_payload      = 152;
     GetBlockInfoResponsePayload get_blockinfo_payload = 153;
+    GetProofResponsePayload     get_proof_payload     = 154;
+
+    // kv request
+    KVGetResponsePayload        kv_get_payload        = 200;
+    KVSetResponsePayload        kv_set_payload        = 201;
+    KVDelResponsePayload        kv_del_payload        = 202;
   }
 }
 
@@ -202,7 +218,7 @@ message TxExecuteInfo {
   ApiStatus op_status      = 2;
   uint64 op_time_nanos     = 3;
   uint64 sequence          = 4;
-  bytes state_root_hash    = 5;
+  bytes state_root_hash    = 5; // Not use
 }
 
 message Tx {
@@ -214,24 +230,23 @@ message Tx {
 message BlockInfo {
   uint64 block_sequence     = 1;
   bytes parent_block_hash   = 2;
-  uint64 first_tx_sequence  = 3;
-  uint64 last_tx_sequence   = 4;
-  bytes tx_root_hash        = 5;
-  uint64 timestamp          = 6;
+  uint64 last_tx_sequence   = 3;
+  bytes tx_root_hash        = 4;
+  uint64 timestamp          = 5;
 }
 
 enum LedgerPermission {
   PEM_UNKNOWN           = 0;
-  PEM_UPDATE_LEDGER     = 1; // create/delete/update/recover ledger
-  PEM_VIEW_LEDGER       = 2; // stat ledger
-  PEM_UPDATE_MEMBER     = 3; // create/delete/update members
-  PEM_VIEW_MEMBER       = 4; // get/list
-  PEM_UPDATE_TRUSTPOINT = 5; // set trust point
-  PEM_VIEW_TRUSTPOINT   = 6; // get trust point
-  PEM_CUSTOM_TX         = 7; // append tx
-  PEM_VIEW_TX           = 8; // get/exist/list txs
-  PEM_GRANT_TIME        = 9; // grant time
-  PEM_VIEW_GRANT_TIME   = 10;// get last grant time
+  PEM_UPDATE_LEDGER     = 1;    // create/delete/update/recover ledger
+  PEM_VIEW_LEDGER       = 2;    // stat ledger
+  PEM_UPDATE_MEMBER     = 3;    // create/delete/update members
+  PEM_VIEW_MEMBER       = 4;    // get/list
+  PEM_UPDATE_TRUSTPOINT = 5;    // set trust point
+  PEM_VIEW_TRUSTPOINT   = 6;    // get trust point
+  PEM_CUSTOM_TX         = 7;    // append tx
+  PEM_VIEW_TX           = 8;    // get tx/exist tx/list txs/get block/get proof
+  PEM_CREATE_TIMEANCHOR  = 9;   // create timeanchor
+  PEM_VIEW_TIMEANCHOR   = 10;   // get last/list timeanchors
 }
 
 message PermissionItem {
@@ -241,20 +256,18 @@ message PermissionItem {
 
 message MemberInfo {
   string member_id                    = 1;
-  bytes public_key                    = 2;
+  bytes  public_key                   = 2;
   repeated PermissionItem permissions = 3;
   bool disabled                       = 4;
+  uint64 create_time_nanos            = 5;
+  uint64 update_time_nanos            = 6;
 }
 
 message LedgerMeta {
+  // name, description...
 }
 
 message LedgerInfo {
-  message Client {
-    string client_token        = 1;
-    uint64 max_client_sequence = 2;
-  }
-
   enum State {
     INVALID  = 0;
     NORMAL   = 1;
@@ -266,20 +279,21 @@ message LedgerInfo {
   uint64 create_time_nanos        = 2;
   uint64 update_time_nanos        = 3;
   string ledger_token             = 4; // Not use
-  repeated Client clients         = 5;
   uint64 tx_num                   = 6;
   uint64 trust_point              = 7;
-  uint64 block_num                = 8; // Not use
-  uint64 grant_time_seconds       = 9;
+  uint64 block_num                = 8;
+  uint64 timeanchor_seconds       = 9;
   State  state                    = 10;
 }
 
 message CreateLedgerRequestPayload {
   LedgerMeta ledger_meta = 1;
+  repeated MemberInfo member_info = 2;
 }
 
 message CreateLedgerResponsePayload {
   LedgerInfo ledger_info = 1;
+  repeated MemberInfo member_info = 2;
 }
 
 message DeleteLedgerRequestPayload {
@@ -333,6 +347,22 @@ message UpdateMemberRequestPayload {
 message UpdateMemberResponsePayload {
 }
 
+message UpdateMemberKeyRequestPayload {
+  string member_id  = 1;
+  bytes  public_key = 2;
+}
+
+message UpdateMemberKeyResponsePayload {
+}
+
+message UpdateMemberPermissionsRequestPayload {
+  string member_id                    = 1;
+  repeated PermissionItem permissions = 2;
+}
+
+message UpdateMemberPermissionsResponsePayload {
+}
+
 message EnableMemberRequestPayload {
   string member_id = 1;
 }
@@ -379,29 +409,28 @@ message GetTrustPointResponsePayload {
   Tx tx                 = 2;
 }
 
-message GrantTimeRequestPayload {
+message CreateTimeAnchorRequestPayload {
   uint64 timestamp_seconds = 1;
   bytes  proof             = 2;
 }
 
-message GrantTimeResponsePayload {
+message CreateTimeAnchorResponsePayload {
 }
 
-message GetLastGrantTimeRequestPayload {
+message GetLastTimeAnchorRequestPayload {
 }
 
-message GetLastGrantTimeResponsePayload {
-  uint64 timestamp_seconds = 1;
-  bytes proof              = 2;
-  Tx tx                    = 3;
+message GetLastTimeAnchorResponsePayload {
+  Tx tx = 1;
 }
 
-message ListGrantTimeTxsRequestPayload {
-  uint64 start_seq = 1;
-  uint32 limit = 2;
+message ListTimeAnchorsRequestPayload {
+  uint64 start_seq  = 1;
+  uint32 limit      = 2;
+  bool   reverse    = 3;
 }
 
-message ListGrantTimeTxsResponsePayload {
+message ListTimeAnchorsResponsePayload {
   repeated Tx tx = 1;
 }
 
@@ -432,9 +461,40 @@ message ExistTxResponsePayload {
 message ListTxsRequestPayload {
   uint64 start_seq    = 1;
   uint32 limit        = 2;
-  string clue         = 3; // filter by clue
+  bytes  clue         = 3; // filter by clue
 }
 
 message ListTxsResponsePayload {
   repeated Tx tx = 1;
+}
+
+message KVGetRequestPayload {
+  bytes key = 1;
+}
+
+message KVGetResponsePayload {
+  bytes value = 1;
+  Tx tx = 2;
+}
+
+message KVSetRequestPayload {
+  bytes key = 1;
+  bytes value = 2;
+}
+
+message KVSetResponsePayload {
+}
+
+message KVDelRequestPayload {
+  bytes key = 1;
+}
+
+message KVDelResponsePayload {
+}
+message GetProofRequestPayload {
+  uint64 tx_sequence  = 1;
+}
+
+message GetProofResponsePayload {
+  repeated bytes hash = 1;
 }

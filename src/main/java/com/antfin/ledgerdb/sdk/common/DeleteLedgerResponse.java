@@ -1,7 +1,6 @@
 package com.antfin.ledgerdb.sdk.common;
 
 import com.antfin.ledgerdb.sdk.proto.DeleteLedgerResponsePayload;
-import com.antfin.ledgerdb.sdk.proto.DeleteLedgerResponsePayload;
 
 public class DeleteLedgerResponse extends MasterLedgerResponse<DeleteLedgerResponsePayload> {
 
@@ -12,8 +11,4 @@ public class DeleteLedgerResponse extends MasterLedgerResponse<DeleteLedgerRespo
     setLedgerInfo(payload.getLedgerInfo());
   }
 
-  @Override
-  public DeleteLedgerResponsePayload getPayload() {
-    return responsePayload;
-  }
 }

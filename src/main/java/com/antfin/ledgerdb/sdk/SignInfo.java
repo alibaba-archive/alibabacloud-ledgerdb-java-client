@@ -1,7 +1,6 @@
 package com.antfin.ledgerdb.sdk;
 
 import com.antfin.ledgerdb.sdk.proto.Signature;
-import com.antfin.ledgerdb.sdk.proto.Signature;
 
 public class SignInfo {
 
