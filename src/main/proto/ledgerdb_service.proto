@@ -3,10 +3,9 @@ syntax = "proto3";
 package ledgerdb;
 
 option java_multiple_files = true;
-option java_package = "com.antfin.ledgerdb.sdk.proto";
+option java_package = "com.antfin.ledgerdb.client.proto";
 option java_outer_classname = "LedgerDBSdkProtocol";
 option java_generic_services = true;
-option objc_class_prefix = "LEDGERDBSDK";
 
 import "google/protobuf/any.proto";
 

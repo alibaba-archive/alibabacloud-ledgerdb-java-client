@@ -104,7 +104,7 @@
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
-            <version>26.0-android</version>
+            <version>28.0-jre</version>
             <exclusions>
                 <exclusion>
                     <groupId>com.google.code.findbugs</groupId>
@@ -181,7 +181,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.antfin.ledgerdb.sdk.test.ContinuousScript</mainClass>
+                            <mainClass>com.antfin.ledgerdb.client.test.ContinuousScript</mainClass>
                         </manifest>
                     </archive>
                     <descriptorRefs>
@@ -222,19 +222,19 @@
                             <relocations>
                                 <relocation>
                                     <pattern>io.opencensus.</pattern>
-                                    <shadedPattern>com.antfin.ledgerdb.sdk.shaded.io.opencensus.</shadedPattern>
+                                    <shadedPattern>com.antfin.ledgerdb.client.shaded.io.opencensus.</shadedPattern>
                                 </relocation>
                                 <relocation>
                                     <pattern>com.google.</pattern>
-                                    <shadedPattern>com.antfin.ledgerdb.sdk.shaded.com.google.</shadedPattern>
+                                    <shadedPattern>com.antfin.ledgerdb.client.shaded.com.google.</shadedPattern>
                                 </relocation>
                                 <relocation>
                                     <pattern>io.netty.</pattern>
-                                    <shadedPattern>com.antfin.ledgerdb.sdk.shaded.io.netty.</shadedPattern>
+                                    <shadedPattern>com.antfin.ledgerdb.client.shaded.io.netty.</shadedPattern>
                                 </relocation>
                                 <relocation>
                                     <pattern>io.grpc.</pattern>
-                                    <shadedPattern>com.antfin.ledgerdb.sdk.shaded.io.grpc.</shadedPattern>
+                                    <shadedPattern>com.antfin.ledgerdb.client.shaded.io.grpc.</shadedPattern>
                                 </relocation>
                                 <relocation>
                                     <pattern>META-INF/native/libnetty</pattern>
