@@ -1,0 +1,27 @@
+parameters:
+  MVN_SETTINGS: $HOME/conf/settings-alipay.xml
+  COVERAGE_EXCLUSIONS: '**/test/**,**/proto/**'
+stages: # 定义了一条pipeline
+  - 单元测试
+  - 代码检测
+  - 安全扫描
+
+单元测试:
+  stage: 单元测试
+  plugin: UT
+  checkRule:
+    - passRate > 85     #单测覆盖率
+  allowFailure: true
+
+PMD扫描: 
+  stage: 代码检测 
+  plugin: PMD # 指定使用的插件
+  checkRule: # 校验结果
+    - pmd1 = 0 && pmd2 = 0
+  allowFailure: true
+
+STC扫描:
+  stage: 安全扫描
+  plugin: STC
+  checkPoints: antcloud
+  allowFailure: true
